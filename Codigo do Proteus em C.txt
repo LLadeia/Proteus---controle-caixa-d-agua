@@ -1,0 +1,127 @@
+// Configuração dos Fuses
+#pragma config OSC = HS, WDT = OFF, LVP = OFF, BOR = ON
+#define _XTAL_FREQ 8000000 // Cristal de 8 MHz
+// Definição dos pinos
+#define BOIA_RS_SUP_BAIXO PORTB.RB0 // Nível baixo do reservatório
+superior (40%)
+#define BOIA_RS_SUP_ALTO PORTB.RB1 // Nível alto do reservatório superior
+(100%)
+
+10
+#define BOIA_RS_SUB_BAIXO PORTB.RB2 // Nível crítico do reservatório
+subterrâneo (30%)
+#define BOIA_RS_SUB_ALTO PORTB.RB3 // Nível seguro do reservatório
+subterrâneo (60%)
+#define BOIA_RS_SUB_Plato PORTB.RB4
+#define BOMBA LATD.LATD0 // Controle da bomba
+#define ALARME LATD.LATD1 // Controle do alarme
+#define LED_BOMBA_ATIVA LATD.LATD2 // LED indicando bomba ativa
+#define LED_BOMBA_INATIVA LATD.LATD3 // LED indicando bomba inativa
+// Pinos do LCD
+sbit LCD_RS at LATC0_bit;
+sbit LCD_EN at LATC1_bit;
+sbit LCD_D4 at LATC2_bit;
+sbit LCD_D5 at LATC3_bit;
+sbit LCD_D6 at LATC4_bit;
+sbit LCD_D7 at LATC5_bit;
+sbit LCD_RS_Direction at TRISC0_bit;
+sbit LCD_EN_Direction at TRISC1_bit;
+sbit LCD_D4_Direction at TRISC2_bit;
+sbit LCD_D5_Direction at TRISC3_bit;
+sbit LCD_D6_Direction at TRISC4_bit;
+sbit LCD_D7_Direction at TRISC5_bit;
+// Variáveis globais
+volatile unsigned long contadorTempo = 0; // Contador de tempo em segundos
+unsigned long tempoParaAcionarBomba = 60; // 24 horas em segundos
+// Função para inicializar o sistema
+void init_system() {
+TRISB = 0b00011111; // Configura os pinos RB0 a RB4 como entradas
+TRISD = 0x00; // Configura todos os pinos de PORTD como saídas
+LATD = 0; // Inicializa os pinos de saída em nível baixo
+ADCON1 = 0x0F; // Configura os pinos como digitais
+}
+// Função para inicializar o Timer1
+void init_timer1() {
+T1CON = 0x31; // Timer1 habilitado, prescaler 1:8, clock interno
+TMR1H = 0x3C; // Valor inicial para gerar interrupção a cada 1 segundo (8
+MHz e prescaler 1:8)
+TMR1L = 0xB0;
+PIE1.TMR1IE = 1; // Habilita a interrupção do Timer1
+INTCON.PEIE = 1; // Habilita interrupções de periféricos
+INTCON.GIE = 1; // Habilita interrupções globais
+}
+// Interrupção do Timer1
+void interrupt() {
+if (PIR1.TMR1IF) { // Verifica se a interrupção é do Timer1
+PIR1.TMR1IF = 0; // Limpa a flag de interrupção do Timer1
+TMR1H = 0x3C; // Recarrega o Timer1 para gerar interrupção a
+cada 1 segundo
+TMR1L = 0xB0;
+contadorTempo++; // Incrementa o contador de segundos
+}
+}
+// Verifica acionamento automático da bomba
+void verifica_acionamento_diario() {
+if (contadorTempo >= tempoParaAcionarBomba) {
+BOMBA = 1; // Liga a bomba
+LED_BOMBA_ATIVA = 1;
+LED_BOMBA_INATIVA = 0;
+Delay_ms(3000); // Mantém a bomba ativa por 5 segundos
+
+11
+
+BOMBA = 0; // Desliga a bomba
+LED_BOMBA_ATIVA = 0;
+LED_BOMBA_INATIVA = 1;
+contadorTempo = 0; // Reseta o contador de tempo
+}
+}
+// Controle principal do sistema
+void controle_sistema() {
+// Situação crítica no reservatório subterrâneo
+if (BOIA_RS_SUB_BAIXO == 1) {
+BOMBA = 0; // Desliga a bomba
+ALARME = 1; // Liga o alarme
+LED_BOMBA_ATIVA = 0;
+LED_BOMBA_INATIVA = 1;
+} else if (BOIA_RS_SUB_ALTO == 0) {
+ALARME = 0; // Desliga o alarme quando o nível volta a
+60%
+}
+// Controle da bomba para o reservatório superior
+if (BOIA_RS_SUP_BAIXO == 1 && BOIA_RS_SUB_BAIXO == 0 && BOIA_RS_SUB_ALTO
+== 0) {
+BOMBA = 1; // Liga a bomba se o reservatório superior
+está baixo
+LED_BOMBA_ATIVA = 1;
+LED_BOMBA_INATIVA = 0;
+} else if (BOIA_RS_SUP_ALTO == 1) {
+BOMBA = 0; // Desliga a bomba se o reservatório superior
+está cheio
+LED_BOMBA_ATIVA = 0;
+LED_BOMBA_INATIVA = 1;
+}
+}
+// Função principal
+void main() {
+init_system(); // Inicializa o sistema
+init_timer1(); // Inicializa o Timer1
+Lcd_Init(); // Inicializa o LCD
+Lcd_Cmd(_LCD_CLEAR); // Limpa o LCD
+Lcd_Cmd(_LCD_CURSOR_OFF);
+while (1) {
+// Atualiza o controle do sistema
+controle_sistema();
+// Verifica acionamento diário da bomba
+verifica_acionamento_diario();
+// Exibe status no LCD
+Lcd_Cmd(_LCD_CLEAR);
+Lcd_Out(1, 1, "Sup. Nvl:");
+Lcd_Out(1, 10, BOIA_RS_SUP_BAIXO ? "40%" : (BOIA_RS_SUP_ALTO ? "100%"
+: "<100%"));
+Lcd_Out(2, 1, "Sub. Nvl:");
+Lcd_Out(2, 10, BOIA_RS_SUB_BAIXO ? "30%" : (BOIA_RS_SUB_ALTO ? "60%" :
+(BOIA_RS_SUB_Plato ? "100%" : "<100%")));
+Delay_ms(1000); // Atualiza a cada segundo
+}
+}
